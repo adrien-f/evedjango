@@ -1,4 +1,5 @@
 Django==1.3.1
--e git+http://github.com/gtaylor/django-eve-db.git#egg=django-eve-db
+-e git+http://github.com/gtaylor/django-eve-db.git@12721b7a43c8cd54fa1d6f84e1f3a04960b86409#egg=django_eve_db-dev
+docutils==0.9.1
 eveapi==1.2.6
 wsgiref==0.1.2
