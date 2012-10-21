@@ -67,7 +67,7 @@ class APIKeyInfo(models.Model):
     key_type = models.CharField(
                                 max_length=2,
                                 choices=KEY_TYPE_CHOICES,
-                                default="UK",
+                                default="UN",
                                 db_index=True, editable=False
                                 )
     access_mask = models.IntegerField(editable=False)
@@ -129,7 +129,7 @@ def api_key_save_handler(sender, instance, **kwargs):
 
     pass_args = {
             'apikey': instance,
-            'key_type': getattr(REVERSE_KEY_MAP, key_info.key.type, 'UN'),
+            'key_type': REVERSE_KEY_MAP.get(key_info.key.type, 'UN'),
             'access_mask': getattr(key_info.key, 'accessMask'),
             'cached_until': getattr(key_info.key, 'cachedUntil', default_cache),
             }
@@ -143,3 +143,49 @@ def api_key_save_handler(sender, instance, **kwargs):
     if not created:
         raise AttributeError("Welp.")
 
+class EveEntity(models.Model):
+    id = models.IntegerField(primary_key=True)
+    name = models.CharField(max_length=128)
+
+    class Meta:
+        abstract=True
+
+class Alliance(EveEntity):
+    pass
+
+class Corporation(EveEntity):
+    alliance = models.ForeignKey(Alliance, related_name="member_corps", blank=False, null=True)
+
+class Faction(EveEntity):
+    pass
+
+class Character(EveEntity):
+    corporation = models.ForeignKey(Corporation)
+    alliance = models.ForeignKey(Alliance, blank=False, null=True)
+    faction = models.ForeignKey(Faction, blank=False, null=True)
+
+    class Meta:
+        abstract=True
+
+class Victim(Character):
+    damage_taken = models.IntegerField()
+    ship_type_id = models.IntegerField()
+
+class Attacker(Character):
+    sec_status = models.FloatField()
+    damage_done = models.IntegerField()
+    final_blow = models.BooleanField()
+    weapon_type_id = models.IntegerField()
+    ship_type_id = models.IntegerField()
+
+class SolarSystem(EveEntity):
+    jumps = models.ManyToManyField("self")
+
+class KillReport(EveEntity):
+    solar_system = models.ForeignKey(SolarSystem, related_name='system_kills')
+    kill_time = models.DateTimeField(blank=False, null=False)
+    victim = models.ForeignKey(Victim, related_name='victim_reports')
+    attackers = models.ManyToManyField(Attacker, related_name='confirmed_kills')
+
+    class Meta:
+        unique_together = ('id', 'victim')
