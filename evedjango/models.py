@@ -1,5 +1,6 @@
 from django.db import models
 from django.db.models.signals import pre_save, post_save
+from django.contrib.auth.models import User
 from django.contrib.sites.models import Site
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -11,7 +12,6 @@ from django.dispatch import receiver
 from managers import APIKeyInfoManager
 
 import eveapi
-# Create your models here.
 
 REVERSE_KEY_MAP = { 'Account': 'AC', 'Character': 'CH', 'Corporation': 'CO', 'Unknown': 'UN' }
 
@@ -21,6 +21,8 @@ def get_sentinel_key():
 class APIKey(models.Model):
     id = models.IntegerField(primary_key=True, editable=True)
     vcode = models.CharField(max_length=64, editable=True)
+    owner = models.ForeignKey(User, related_name='user_api_keys', null=True, blank=False)
+
     # This is solely for access restrictions that can be removed
     # by setting API_KEY_SITE_LOCK = False;  This defaults to 
     # True to prevent bad behavior on the part of the developer (both of us).
@@ -42,13 +44,6 @@ class APIKey(models.Model):
             self.delete()
             return None
 
-    def save(self, *args, **kwargs):
-        if self.get_api_object() is not None:
-            super(APIKey, self).save(*args, **kwargs)
-        else:
-            # Something is wrong with this key or the backend, let's just leave this be.
-            return
-
     def get_key_info(self):
         return APIKeyInfo.objects.get_or_create(apikey=self)[0]
 
@@ -63,7 +58,12 @@ class APIKeyInfo(models.Model):
             (CHARACTER, 'Character'),
             (CORPORATION, 'Corporation'),
     )
-    apikey = models.ForeignKey(APIKey, related_name='info', unique=True, db_index=True, editable=False)
+    apikey = models.ForeignKey(APIKey,
+                                  primary_key=True,
+                                  related_name='info',
+                                  unique=True,
+                                  db_index=True,
+                                  editable=False)
     key_type = models.CharField(
                                 max_length=2,
                                 choices=KEY_TYPE_CHOICES,
@@ -98,7 +98,7 @@ class APIKeyInfo(models.Model):
             self.expires_on = key_info.key.expires
 
     def has_mask(self, mask):
-        return ((self.access_mask & mask) == mask)
+        return self.access_mask & mask == mask
 
     def is_corporation(self):
         return self.key_type == self.CORPORATION
@@ -130,6 +130,7 @@ def api_key_save_handler(sender, instance, **kwargs):
     pass_args = {
             'apikey': instance,
             'key_type': getattr(REVERSE_KEY_MAP, key_info.key.type, 'UN'),
+            'access_mask': getattr(key_info.key, 'accessMask'),
             'cached_until': getattr(key_info.key, 'cachedUntil', default_cache),
             }
     expires_on = getattr(key_info.key, 'expires', None)
@@ -139,4 +140,6 @@ def api_key_save_handler(sender, instance, **kwargs):
     api_key_info, created = APIKeyInfo.objects.get_or_create(
                                                 **pass_args
                                             )
+    if not created:
+        raise AttributeError("Welp.")
 
