@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 
 from django.dispatch import receiver
 
-from managers import APIKeyInfoManager
+from managers import APIKeyInfoManager, KillReportManager
+
+from eve_db.models import InvType, MapSolarSystem, ChrFaction
 
 import eveapi
 
@@ -151,41 +153,84 @@ class EveEntity(models.Model):
         abstract=True
 
 class Alliance(EveEntity):
-    pass
+    faction = models.ForeignKey(ChrFaction, related_name="militia_member_alliances", blank=False, null=True)
 
 class Corporation(EveEntity):
     alliance = models.ForeignKey(Alliance, related_name="member_corps", blank=False, null=True)
+    faction = models.ForeignKey(ChrFaction, related_name="militia_member_corps", blank=False, null=True)
 
-class Faction(EveEntity):
-    pass
+    def fetch_and_save(self):
+        if self.pk:
+            api = eveapi.EVEAPIConnection()
+            corp_sheet = api.corp.CorporationSheet(corporationID=self.pk)
+            self.name = corp_sheet.corporationName
+            if corp_sheet.allianceID != 0:
+                self.alliance = Alliance.objects.get_or_create(pk=corp_sheet.allianceID)
+                if not self.alliance.name:
+                    self.alliance.name = corp_sheet.allianceName
+                    if corp_sheet.factionID != 0:
+                        self.alliance.faction = ChrFaction.objects.get(pk=corp_sheet.factionID)
+                    alliance.save()
+            if corp_sheet.factionID != 0:
+                self.faction = ChrFaction.objects.get(pk=corp_sheet.factionID)
+            self.save()
 
 class Character(EveEntity):
     corporation = models.ForeignKey(Corporation)
     alliance = models.ForeignKey(Alliance, blank=False, null=True)
-    faction = models.ForeignKey(Faction, blank=False, null=True)
+    faction = models.ForeignKey(ChrFaction, blank=False, null=True)
 
     class Meta:
         abstract=True
 
+    def fetch_and_save(self):
+        if self.pk:
+            api = eveapi.EVEAPIConnection()
+            char_info = api.char.CharacterInfo(characterID=self.pk)
+            self.name = char_info.characterName
+            if char_info.factionID != 0:
+                self.faction = ChrFaction.objects.get(pk=char_info.factionID)
+            if char_info.allianceID != 0:
+                self.alliance = Alliance.objects.get_or_create(pk=char_info.allianceID)
+                if not self.alliance.name:
+                    self.alliance.name = char_info.allianceName
+                    if self.faction:
+                        self.alliance.faction = self.faction
+                    alliance.save()
+            self.corporation = Corporation.objects.get_or_create(pk=char_info.corporationID)
+            if not self.corporation.name:
+                self.corporation.fetch_and_save()
+            self.save()
+
 class Victim(Character):
     damage_taken = models.IntegerField()
-    ship_type_id = models.IntegerField()
+    ship_type = models.ForeignKey(InvType)
 
 class Attacker(Character):
     sec_status = models.FloatField()
     damage_done = models.IntegerField()
     final_blow = models.BooleanField()
-    weapon_type_id = models.IntegerField()
-    ship_type_id = models.IntegerField()
+    damage_done = models.IntegerField()
+    weapon_type = models.ForeignKey(InvType, related_name="used_by_attackers")
+    ship_type = models.ForeignKey(InvType, related_name="flown_by_attackers")
 
-class SolarSystem(EveEntity):
-    jumps = models.ManyToManyField("self")
+class ItemDrop(models.Model):
+    item_type = models.ForeignKey(InvType)
+    location_flag = models.IntegerField(default=0)
+    container = models.ForeignKey("self", related_name="contains", blank=False, null=True)
+    qty_dropped = models.IntegerField(default=0)
+    qty_destroyed = models.IntegerField(default=0)
+    singleton = models.IntegerField(default=0)
 
 class KillReport(EveEntity):
-    solar_system = models.ForeignKey(SolarSystem, related_name='system_kills')
+    solar_system = models.ForeignKey(MapSolarSystem, related_name='system_kills')
     kill_time = models.DateTimeField(blank=False, null=False)
     victim = models.ForeignKey(Victim, related_name='victim_reports')
     attackers = models.ManyToManyField(Attacker, related_name='confirmed_kills')
+    items = models.ManyToManyField(ItemDrop)
+
+    objects = KillReportManager()
 
     class Meta:
         unique_together = ('id', 'victim')
+
