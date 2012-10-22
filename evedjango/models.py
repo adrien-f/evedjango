@@ -22,7 +22,7 @@ class APIKey(models.Model):
     id = models.IntegerField(primary_key=True, editable=True)
     vcode = models.CharField(max_length=64, editable=True)
     # This is solely for access restrictions that can be removed
-    # by setting API_KEY_SITE_LOCK = False;  This defaults to 
+    # by setting EVE_DISABLE_SITES = False;  This defaults to 
     # True to prevent bad behavior on the part of the developer (both of us).
     # Either way, this is included for developers who actively use the sites
     # framework.  If you do not wish to use it, set "EVE_DISABLE_SITES" in 
