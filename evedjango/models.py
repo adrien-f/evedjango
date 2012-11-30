@@ -31,8 +31,14 @@ class APIKey(models.Model):
     # Either way, this is included for developers who actively use the sites
     # framework.  If you do not wish to use it, set "EVE_DISABLE_SITES" in 
     # in your settings.py
-    if getattr(settings, "EVE_DISABLE_SITES", False):
-        site = models.ForeignKey(Site, related_name='site_api_keys')
+    if not getattr(settings, "EVE_DISABLE_SITES", False):
+        site = models.ForeignKey(Site, related_name='site_api_keys', default=settings.SITE_ID)
+
+    class Meta:
+        if not getattr(settings, "EVE_DISABLE_SITES", False):
+            unique_together = ('id', 'site')
+        else:
+            pass
 
     def get_api_object(self):
         api = eveapi.EVEAPIConnection()
@@ -47,7 +53,7 @@ class APIKey(models.Model):
             return None
 
     def get_key_info(self):
-        return APIKeyInfo.objects.get_or_create(apikey=self)[0]
+        return APIKeyInfo.objects.get_or_create(api_key=self)[0]
 
 class APIKeyInfo(models.Model):
     UNKNOWN = 'UN'
@@ -60,12 +66,13 @@ class APIKeyInfo(models.Model):
             (CHARACTER, 'Character'),
             (CORPORATION, 'Corporation'),
     )
-    apikey = models.ForeignKey(APIKey,
-                                  primary_key=True,
+    api_key = models.OneToOneField(
+                                  APIKey,
                                   related_name='info',
                                   unique=True,
                                   db_index=True,
-                                  editable=False)
+                                  editable=False
+                                  )
     key_type = models.CharField(
                                 max_length=2,
                                 choices=KEY_TYPE_CHOICES,
@@ -92,12 +99,13 @@ class APIKeyInfo(models.Model):
 
         default_cache = datetime.now() + timedelta(1/12)
 
-        self.cached_until = getattr(key_info.key, 'cachedUntil', default_cache)
+        self.cached_until = getattr(key_info, 'cachedUntil', default_cache)
 
         if key_info.key.expires is u'':
             self.expires_on = None
         else:
-            self.expires_on = key_info.key.expires
+            expires_on = datetime.fromtimestamp(key_info.key.expires)
+            self.expires_on = expires_on
 
     def has_mask(self, mask):
         return self.access_mask & mask == mask
@@ -114,7 +122,7 @@ class APIKeyInfo(models.Model):
 @receiver(pre_save, sender=APIKeyInfo)
 def api_key_info_save_handler(sender, instance, **kwargs):
     # Already saved once before; to prevent spamming EVE API beyond cachedUntil
-    auth = instance.apikey.get_api_object()
+    auth = instance.api_key.get_api_object()
     key_info = auth.account.APIKeyInfo()
 
     current_time = getattr(key_info.key, 'currentTime', datetime.now())
@@ -128,17 +136,21 @@ def api_key_save_handler(sender, instance, **kwargs):
     auth = instance.get_api_object()
     key_info = auth.account.APIKeyInfo()
     default_cache = datetime.now() + timedelta(1)
+    key_type = REVERSE_KEY_MAP.get(key_info.key.type, 'UN')
+
+    if key_type in ['CH', 'AC']:
+        [Character.create_from_api_set(row).save() for row in key_info.key.characters]
 
     pass_args = {
-            'apikey': instance,
-            'key_type': REVERSE_KEY_MAP.get(key_info.key.type, 'UN'),
+            'api_key': instance,
+            'key_type': key_type,
             'access_mask': getattr(key_info.key, 'accessMask'),
             'cached_until': getattr(key_info.key, 'cachedUntil', default_cache),
             }
     expires_on = getattr(key_info.key, 'expires', None)
-    if expires_on:
+    if expires_on is not None:
         if expires_on is not u'':
-            pass_args['expires_on'] = expires_on
+            pass_args['expires_on'] = datetime.fromtimestamp(expires_on)
     api_key_info, created = APIKeyInfo.objects.get_or_create(
                                                 **pass_args
                                             )
@@ -148,6 +160,7 @@ def api_key_save_handler(sender, instance, **kwargs):
 class EveEntity(models.Model):
     id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=128)
+    api_keys = models.ManyToManyField(APIKeyInfo, related_name='%(app_label)s_%(class)s_entities')
 
     class Meta:
         abstract=True
@@ -180,41 +193,103 @@ class Character(EveEntity):
     alliance = models.ForeignKey(Alliance, blank=False, null=True)
     faction = models.ForeignKey(ChrFaction, blank=False, null=True)
 
-    class Meta:
-        abstract=True
+    @classmethod
+    def create_from_api_set(cls, api_set, api_key=None):
 
-    def fetch_and_save(self):
-        if self.pk:
-            api = eveapi.EVEAPIConnection()
-            char_info = api.char.CharacterInfo(characterID=self.pk)
-            self.name = char_info.characterName
-            if char_info.factionID != 0:
-                self.faction = ChrFaction.objects.get(pk=char_info.factionID)
-            if char_info.allianceID != 0:
-                self.alliance = Alliance.objects.get_or_create(pk=char_info.allianceID)
-                if not self.alliance.name:
-                    self.alliance.name = char_info.allianceName
-                    if self.faction:
-                        self.alliance.faction = self.faction
-                    alliance.save()
-            self.corporation = Corporation.objects.get_or_create(pk=char_info.corporationID)
-            if not self.corporation.name:
-                self.corporation.fetch_and_save()
-            self.save()
+        character = Character(id=api_set.characterID)
 
-class Victim(Character):
+        try:
+            character.faction = ChrFaction.objects.get(
+                    pk=getattr(api_set, 'factionID', None)
+                    )
+        except ChrFaction.DoesNotExist:
+            character.faction = None
+
+        try:
+            character.alliance = Alliance.objects.get(
+                    pk=getattr(api_set, 'allianceID', 0)
+                    )
+        except Alliance.DoesNotExist:
+            if getattr(api_set, 'allianceID', 0)  == 0:
+                character.alliance = None
+            else:
+                character.alliance = Alliance(
+                        id=api_set.allianceID,
+                        name=api_set.allianceName,
+                        faction=character.faction,
+                        ).save()
+        try:
+            character.corporation = Corporation.objects.get(
+                    pk=api_set.corporationID
+                    )
+        except Corporation.DoesNotExist:
+            corp = Corporation(
+                    id=api_set.corporationID,
+                    name=api_set.corporationName,
+                    alliance=character.alliance,
+                    faction=character.faction
+                    )
+            corp.save()
+            character.corporation = corp
+
+        if api_key is not None:
+            character.api_keys.add(api_key)
+
+        character.save()
+        return character
+
+class Victim(models.Model):
+    character = models.ForeignKey(Character, related_name="deaths")
     damage_taken = models.IntegerField()
     ship_type = models.ForeignKey(InvType)
 
-class Attacker(Character):
+    @classmethod
+    def create_from_victim_set(cls, victim_set, api_key=None):
+
+        try:
+            character = Character.objects.get(pk=victim_set.characterID)
+        except Character.DoesNotExist:
+            character = Character.create_from_api_set(victim_set, api_key).save()
+
+        victim = cls(
+                character=character,
+                damage_taken=victim_set.damageTaken,
+                ship_type=InvType(pk=victim_set.shipTypeID))
+
+        victim.save()
+
+        return victim
+
+class Attacker(models.Model):
+    character = models.ForeignKey(Character, related_name="kills")
     sec_status = models.FloatField()
     damage_done = models.IntegerField()
     final_blow = models.BooleanField()
-    damage_done = models.IntegerField()
     weapon_type = models.ForeignKey(InvType, related_name="used_by_attackers")
     ship_type = models.ForeignKey(InvType, related_name="flown_by_attackers")
 
+    @classmethod
+    def create_from_attacker_set(cls, att_set, api_key=None):
+        try:
+            character = Character.objects.get(pk=att_set.characterID)
+        except Character.DoesNotExist:
+            character = Character.create_from_api_set(att_set, api_key)
+
+        return cls(
+                character=character,
+                sec_status=float(att_set.securityStatus),
+                damage_done=att_set.damageDone,
+                final_blow=bool(att_set.finalBlow),
+                weapon_type=InvType.objects.get(pk=att_set.weaponTypeID),
+                ship_type=InvType.objects.get(pk=att_set.shipTypeID),
+                ).save()
+
+class CharacterProfile(models.Model):
+    character = models.OneToOneField(Character, related_name="profile", unique=True)
+    api_key = models.ForeignKey(APIKey, related_name="character_profile")
+
 class ItemDrop(models.Model):
+    kill_report = models.ForeignKey(InvType, related_name="item_drops")
     item_type = models.ForeignKey(InvType)
     location_flag = models.IntegerField(default=0)
     container = models.ForeignKey("self", related_name="contains", blank=False, null=True)
@@ -222,15 +297,82 @@ class ItemDrop(models.Model):
     qty_destroyed = models.IntegerField(default=0)
     singleton = models.IntegerField(default=0)
 
+    @classmethod
+    def create_from_item_row(cls, item_row, kill_report, container=None):
+        item_drop = cls(
+                    kill_report=kill_report,
+                    item_type=InvType.objects.get(pk=item_row.typeID),
+                    location_flag=getattr(item_row, 'flag', 0),
+                    container=container,
+                    qty_dropped=getattr(item_row, 'qtyDropped', 0),
+                    qty_destroyed=getattr(item_row, 'qtyDestroyed', 0),
+                    singleton=getattr(item_row, 'singleton', 0),
+                )
+        item_drop.save()
+
+        if hasattr(item_row, 'items'):
+            item_drop=[item_drop]
+            for item in item_row.items:
+                item_drop.append(cls.create_from_item_row(item, container=item_drop))
+
+        return item_drop
+
 class KillReport(EveEntity):
     solar_system = models.ForeignKey(MapSolarSystem, related_name='system_kills')
     kill_time = models.DateTimeField(blank=False, null=False)
     victim = models.ForeignKey(Victim, related_name='victim_reports')
     attackers = models.ManyToManyField(Attacker, related_name='confirmed_kills')
-    items = models.ManyToManyField(ItemDrop)
 
     objects = KillReportManager()
 
     class Meta:
         unique_together = ('id', 'victim')
+    
+    @classmethod
+    def create_from_kill_row(cls, kill_row, api_key=None):
+        kill_id = kill_row.killID
+        try:
+            kill_report = cls.objects.get(pk=kill_id)
+        except cls.DoesNotExist:
+            pass
+        else:
+            return kill_report, kill_report.drops
+        kill_time = kill_row.killTime
+        kill_system = kill_row.solarSystemID
+        victim_set = kill_row.victim
+        attackers_rowset = kill_row.attackers
+        items_rowset = kill_row.items
+
+        # defaults
+        alliance = None
+        faction = None
+
+        victim = Victim.create_from_victim_set(victim_set, api_key).save()
+        attackers = [Attacker.create_from_attacker_set(att_set, api_key).save() for att_set in attackers_rowset]
+        solsystem = MapSolarSystem(pk=kill_system)
+
+        kill_report = cls(
+                id=kill_id,
+                name='Kill Report',
+                api_keys=[api_key,],
+                solar_system=solsystem,
+                kill_time=kill_time,
+                victim=victim,
+                attackers=attackers,
+                )
+
+        kill_report.save()
+
+        drops = []
+
+        for item_set in items_rowset:
+            drop = ItemDrop.create_from_item_row(item_set, kill_report)
+            try:
+                tmp_drops = [item_drop for item_drop in drop]
+            except TypeError:
+                drops.append(drop)
+            else:
+                drops += drop
+
+        return kill_report, drops
 
