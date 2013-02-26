@@ -1,6 +1,5 @@
 from django.db import models
-from eveauth.models import Corporation, Character, Alliance, APIKey
-from account.models import Account
+from evedjango.models import Corporation, Character, Alliance, APIKey
 from django.contrib.auth.models import Group, User
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
@@ -141,7 +140,7 @@ class ApplicationMixin(models.Model):
         return 'Unknown'
 
 class Recommendation(models.Model):
-    account = models.ForeignKey(Account, related_name='app_recommendations')
+    account = models.ForeignKey(User, related_name='app_recommendations')
     application_type = models.ForeignKey(ContentType)
     application_id = models.PositiveIntegerField()
     application_obj = generic.GenericForeignKey('application_type', 'application_id')
@@ -150,13 +149,13 @@ class Recommendation(models.Model):
 class CorporationApplication(ApplicationMixin):
     character = models.OneToOneField(Character, related_name='corp_app')
     corporation_profile = models.ForeignKey(CorporationProfile, related_name='member_applications')
-    created_by = models.ForeignKey(Account, related_name='corporation_applications')
+    created_by = models.ForeignKey(User, related_name='corporation_applications')
     recommendations = generic.GenericRelation(Recommendation,
                                         content_type_field='application_type',
                                         object_id_field='application_id')
-    reviewed_by = models.ForeignKey(Account, null=True, default=None, related_name='mbr_applications_reviewed')
-    approved_by = models.ForeignKey(Account, null=True, default=None, related_name='mbr_applications_approved')
-    rejected_by = models.ForeignKey(Account, null=True, default=None, related_name='mbr_applications_rejected')
+    reviewed_by = models.ForeignKey(User, null=True, default=None, related_name='mbr_applications_reviewed')
+    approved_by = models.ForeignKey(User, null=True, default=None, related_name='mbr_applications_approved')
+    rejected_by = models.ForeignKey(User, null=True, default=None, related_name='mbr_applications_rejected')
 
     objects = managers.CorporationAppMgr()
 
@@ -176,14 +175,14 @@ class CorporationApplication(ApplicationMixin):
 
 class AllianceApplication(ApplicationMixin):
     corporation = models.OneToOneField(Corporation, related_name='alliance_application', unique=True)
-    created_by = models.ForeignKey(Account, related_name='alliance_applications')
+    created_by = models.ForeignKey(User, related_name='alliance_applications')
     recommendations = generic.GenericRelation(Recommendation,
                                         content_type_field='application_type',
                                         object_id_field='application_id')
 
-    reviewed_by = models.ForeignKey(Account, null=True, default=None, related_name='crp_applications_reviewed')
-    approved_by = models.ForeignKey(Account, null=True, default=None, related_name='crp_applications_approved')
-    rejected_by = models.ForeignKey(Account, null=True, default=None, related_name='crp_applications_rejected')
+    reviewed_by = models.ForeignKey(User, null=True, default=None, related_name='crp_applications_reviewed')
+    approved_by = models.ForeignKey(User, null=True, default=None, related_name='crp_applications_approved')
+    rejected_by = models.ForeignKey(User, null=True, default=None, related_name='crp_applications_rejected')
     objects = managers.AllianceAppMgr()
 
 
