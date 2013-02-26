@@ -1,0 +1,75 @@
+{% extends "corpmgr_base.html" %}
+
+{% load i18n %}
+
+{% block body %}
+{% block content %}
+<div class="well success">
+    <div class="span12">
+    </div>
+    <p>
+    <h2><img src="{{ corp.get_logo_url }}"/> {{ corp.name }} {{ status_text }} Applications</h2>
+    <br/>
+    <div class="btn-group btn-mini">
+        <a href="/corps/director/{{ corp.corp_id }}" class="btn btn-mini">New / Pending</a>
+        <a href="/corps/director/{{ corp.corp_id }}/0" class="btn btn-mini">New Only</a>
+        <a href="/corps/director/{{ corp.corp_id }}/1" class="btn btn-mini">Pending Review</a>
+        <a href="/corps/director/{{ corp.corp_id }}/2" class="btn btn-mini">Approved</a>
+        <a href="/corps/director/{{ corp.corp_id }}/-1" class="btn btn-mini">Rejected</a>
+    </div>
+    {% if pending_apps %}
+    <table class="table table-striped table-bordered">
+        <col width="10%">
+        <col width="55%">
+        <col width="15%">
+        <col width="20%">
+    <thead>
+        <tr>
+            <th>Status</th>
+            <th>Application</th>
+            <th>Last Modified</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for pending in pending_apps %}
+    <tr>
+        <td><a href="/corps/director/character/{% if pending.status == -1 %}{{ pending.rejected_by.default_character.character.character_id }}{% endif %}{% if pending.status == 1 %}{{ pending.reviewed_by.default_character.character.character_id }}{% endif %}{% if pending.status == 2 %}{{ pending.approved_by.default_character.character.character_id }}{% endif %}">{{ pending.status_text }}</a>
+            </td>
+    <td id="{{ pending.pk }}">
+        <a href="/corps/director/character/{{ pending.character.character_id }}">{{ pending.character.character_name }}</a>
+        {% if pending.character.account.reddit_account.verified %}(Reddit: <a href="http://reddit.com/u/{{ pending.character.account.reddit_account.reddit_login }}">{{ pending.character.account.reddit_account.reddit_login }}</a>) {% endif %}
+    </td>
+    <td>
+        {{ pending.last_modified }}
+    </td>
+    <td>
+        <div class="btn-group">
+            {% if pending.is_approved %}
+            <a href="#" class="btn disabled">Approve</a>
+            {% else %}
+            <a href="/corps/director/approve/{{ pending.pk }}" class="btn btn-success">Approve</a>
+            {% endif %}
+            {% if pending.is_pending %}
+            <a href="#" class="btn disabled">Flag</a>
+            {% else %}
+            <a href="/corps/director/pending/{{ pending.pk }}" class="btn btn-warning">Flag</a>
+            {% endif %}
+            {% if pending.is_rejected %}
+            <a href="#" class="btn disabled">Reject</a>
+            {% else %}
+            <a href="/corps/director/reject/{{ pending.pk }}" class="btn btn-danger">Reject</a>
+            {% endif %}
+        </div>
+    </td>
+    </tr>    
+    {% endfor %}
+    </tbody>
+    </table>
+    {% else %}
+    There are no {{ status_text }} applications for this corporation.
+    {% endif %}
+    </p>
+</div>
+{% endblock %}
+{% endblock %}

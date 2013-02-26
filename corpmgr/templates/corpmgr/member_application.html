@@ -1,0 +1,69 @@
+{% extends "corpmgr_base.html" %}
+
+{% load i18n %}
+
+{% block head %}
+    {% if not wizard %}
+        {{ form.media }}
+    {% else %}
+        {{ wizard.form.media }}
+    {% endif %}
+{% endblock %}
+
+{% block body %}
+{% block content %}
+<div class="well">
+    <p>
+    <h2>Application Requirements</h2>
+    Please note each corporation has a minimum key required to evn apply.  Anything that gives at least the minimum key's level of access will be able to apply.  For reference, below are links to the required keys.
+    </p>
+
+    {% if corp_managed %}
+    <div class="btn-group">
+        <h3>Corporation-required Keys</h3>
+            {% for corp_profile in corporation_profiles %}
+            <a href="https://support.eveonline.com/api/Key/CreatePredefined/{{ corp_profile.api_mask }}" class="btn" target="_blank"><img title="{{ corp_profile.corporation.name }}" src="{{ corp_profile.corporation.get_logo_url }}"/></a>
+            {% endfor %}
+    </div>
+    {% else %}
+    <div class="btn-group">
+    <a href="https://support.eveonline.com/api/Key/CreatePredefined/82321730" class="btn btn-primary" target="_blank">Pre-defined Key</a>
+    </div>
+    {% endif %}
+</div>
+<div class="well">
+    <form action="" method="POST">
+        {% block form %}
+            {% csrf_token %}
+
+            {% for hidden in form.hidden_fields %}
+                {{ hidden }}
+            {% endfor %}
+
+            {% for field in form.visible_fields %}
+            <div class="clearfix{% if field.errors %} error{% endif %}"> 
+                {{ field.label_tag }}
+                <div class="input"> 
+                    {{ field }}
+                    {% if field.errors %}
+                        {% for error in field.errors %}
+                            <span class="help-inline">{{ error }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="help-inline">{{ field.help_text }}</span>
+                    {% endif %}
+                </div> 
+            </div><!-- /clearfix -->
+            {% endfor %}
+
+            <div class="actions">
+                {% block actions %}
+                <button type="submit" class="btn primary">{% trans "Save" %}</button>
+                <a href="{{ success_url }}" class="btn">{% trans "Cancel" %}</a>
+                {% endblock %}
+            </div>
+        {% endblock %}
+    </form>
+</div>
+{% endblock %}
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "site_base.html" %}
+
+{% load i18n }
+
+{% block head_title_base %}{% if SITE_NAME %}{{ SITE_NAME }} | {% endif %} API Keys {% endblock %}
+
+{% block body %}
+<h1>{{ model_verbose_name_plural }}</h1>
+
+{% block button_bar %}
+{% endblock %}
+
+    {% block content %}
+        <table class="table table-striped">
+            <thead>
+                {% block thead %}
+                <tr>
+                    <th>Character</th><th>Corporation</th><th>Status</th><th>Created On</th><th>Last Modified</th><th>Actions</th>
+                </tr>
+                {% endblock %}
+            <tbody>
+                {% for application in object_list %}
+                <tr>
+                    {% block each_tr %}
+                    <td>{{ application.character }}</td><td><img src="{{ application.corporation_profile.corporation.get_logo_url }}"/> {{ application.corporation_profile }}</td><td>{{ application.status_text }}</td><td>{{ application.created_on }}</td><td>{{ application.last_modified }}</td><td><a href="{{ application.pk }}/delete/" class="btn btn-danger">Delete</a></td>
+                    {% endblock %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endblock %}
+
+{% endblock %}

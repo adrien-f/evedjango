@@ -1,0 +1,18 @@
+{% extends "corpmgr_base.html" %}
+
+{% load i18n %}
+
+{% block body %}
+{% block content %}
+<div class="row success">
+    <p>
+    <h2><a href="http://evewho.com/pilot/{{ character.character_name }}">{{ character.character_name }}</a></h2>
+    <div class="span1"><img src="http://image.eveonline.com/Character/{{ character.character_id }}_64.jpg" align="left"/></div>
+    <div class="span9">
+    <strong>Corporation:</strong> {{ corp.name }}<br/>
+    <strong>Applications:<strong> {{ character.corp_app.corporation_profile.corp.name }}<br/>
+        </div>
+    </p>
+</div>
+{% endblock %}
+{% endblock %}
