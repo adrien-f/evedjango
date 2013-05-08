@@ -183,7 +183,7 @@ class Corporation(EveEntity):
                     self.alliance.name = corp_sheet.allianceName
                     if corp_sheet.factionID != 0:
                         self.alliance.faction = ChrFaction.objects.get(pk=corp_sheet.factionID)
-                    alliance.save()
+                    self.alliance.save()
             if corp_sheet.factionID != 0:
                 self.faction = ChrFaction.objects.get(pk=corp_sheet.factionID)
             self.save()
